@@ -1,0 +1,3 @@
+AI conferences 
+- SIGIR 
+- ICML 
