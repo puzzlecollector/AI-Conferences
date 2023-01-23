@@ -1,3 +1,3 @@
 AI conferences 
 - SIGIR 
-- ICML 
+- Journal of Finance  
