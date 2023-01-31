@@ -25,7 +25,7 @@ from scipy.spatial.distance import cdist
 
 # for processing discrete features 
 def one_hot(x, dims, gpu = True):
-    print(x)
+    # print(x)
     out = []
     batch_size = x.shape[0]
     seq_len = x.shape[1]
@@ -415,26 +415,48 @@ class CustomDataset(Dataset):
             "target_seq": torch.tensor(self.target_seq[i], dtype=torch.float32), 
         }
 
+
 train_dataset = CustomDataset(past_cont_inputs, past_dates, future_cont_inputs, future_dates, targets) 
 train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True) 
 
-## try if the implementation works 
 
-for step, batch in tqdm(enumerate(train_dataloader), position=0, leave=True): 
-    past_cont = batch["past_cont"].to(device) 
-    past_disc = batch["past_disc"].to(device) 
-    future_cont = batch["future_cont"].to(device) 
-    future_disc = batch["future_disc"].to(device) 
-    target_seq = batch["target_seq"].to(device) 
-    model.reset(batch_size=past_cont.shape[0], gpu=True)  
+epochs = 50
+optimizer = torch.optim.Adam(model.parameters(), lr=5e-5) 
+train_losses, val_losses = [], []  
+criterion = nn.L1Loss()  
+total_steps = len(train_dataloader) * epochs
+scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=total_steps)
+
+model.zero_grad() 
+for epcoh_i in tqdm(range(0, epochs), desc="Epochs", position=0, leave=True, total=epochs):
+    train_loss = 0 
+    model.train() 
+    with tqdm(train_dataloader, unit="batch") as tepoch:
+        for step, batch in enumerate(tepoch): 
+            past_cont = batch["past_cont"].to(device) 
+            past_disc = batch["past_disc"].to(device) 
+            future_cont = batch["future_cont"].to(device) 
+            future_disc = batch["future_disc"].to(device) 
+            target_seq = batch["target_seq"].to(device) 
+            model.reset(batch_size=past_cont.shape[0], gpu=True)  
+            past_disc = one_hot(past_disc, [13, 32, 24]) 
+            future_disc = one_hot(future_disc, [13, 32, 24]) 
+            net_out, vs_weights  = model(past_cont, past_disc, future_cont, future_disc) 
+            net_out = torch.reshape(net_out, (-1, 6)) 
+            loss = criterion(net_out, target_seq) 
+            train_loss += loss.item()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
+            scheduler.step()
+            model.zero_grad()
+            tepoch.set_postfix(loss=train_loss / (step+1))
+            time.sleep(0.1)
+    avg_train_loss = train_loss / len(train_dataloader) 
+    train_losses.append(avg_train_loss) 
+    print(f"average train loss: {avg_train_loss}") 
     
+    val_loss = 0 
+    model.eval() 
     
-    past_disc = one_hot(past_disc, [13, 32, 24]) 
-    future_disc = one_hot(future_disc, [13, 32, 24]) 
-    
-    print(past_disc)
-    
-    
-    net_out, vs_weights  = model(past_cont, past_disc, future_cont, future_disc) 
-    print(net_out) 
-    break 
+
